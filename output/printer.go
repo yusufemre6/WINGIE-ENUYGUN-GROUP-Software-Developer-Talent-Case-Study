@@ -39,6 +39,7 @@ func (p *ConsolePrinter) Print(result *model.ScheduleResult) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, line)
 	fmt.Fprintf(w, "  Job: %s\n", result.JobName)
+	fmt.Fprintf(w, "  Workers: %d\n", result.Workers)
 	fmt.Fprintln(w, line)
 
 	fmt.Fprintf(w, "  Minimum completion time : %d unit(s)\n", result.MinCompletionTime)
@@ -47,7 +48,7 @@ func (p *ConsolePrinter) Print(result *model.ScheduleResult) {
 	}
 
 	fmt.Fprintln(w, dash)
-	fmt.Fprintln(w, "  Execution Plan (assuming parallel execution):")
+	fmt.Fprintln(w, "  Execution Plan:")
 	fmt.Fprintln(w, dash)
 	fmt.Fprintf(w, "  %-8s %12s %12s %12s\n", "Task", "Start", "Finish", "Duration")
 	fmt.Fprintln(w, dash)

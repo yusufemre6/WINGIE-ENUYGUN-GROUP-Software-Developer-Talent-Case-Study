@@ -22,7 +22,10 @@ The job and its tasks form a **DAG** where each node is a task and edges represe
 
 Time complexity: **O(V + E)**.
 
-Assumption: each task uses one worker; independent tasks can run in parallel once their dependencies are done.
+**Workers:** The user supplies the number of workers. Each task uses one worker at a time.
+
+- **When workers ≥ number of tasks:** There are enough workers for unlimited parallelism. The schedule is the same as CPM: EST/EFT and minimum completion time as above; the critical path is shown.
+- **When workers < number of tasks:** A **discrete-event simulation** is used. Time advances from 0; at each moment, up to `workers` tasks can run. When a task finishes, its worker is freed and a new task is chosen from the **ready** set (all dependencies finished, task not yet started). Ready tasks are chosen in deterministic order (e.g. by task ID). The result is the completion time and per-task start/finish times for this fixed number of workers. The critical path is not shown in this mode.
 
 ---
 

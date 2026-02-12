@@ -2,7 +2,7 @@
 
 **Wingie EnUygun Group — Software Developer Case Study**
 
-A CLI tool that computes the minimum completion time for a job consisting of dependent tasks, using the **Critical Path Method (CPM)**.
+A CLI tool that schedules a job (dependent tasks) using a **fixed number of workers** and reports the minimum completion time. When workers ≥ task count, the result matches **Critical Path Method (CPM)**; otherwise a discrete-event simulation is used.
 
 > For a detailed explanation of the algorithm, assumptions, and design decisions, see **[SOLUTION.md](SOLUTION.md)**.
 
@@ -20,7 +20,7 @@ A CLI tool that computes the minimum completion time for a job consisting of dep
 ├── validator/
 │   └── validator.go         # Validator interface + GraphValidator
 ├── scheduler/
-│   └── scheduler.go         # Scheduler interface + CriticalPathScheduler
+│   └── scheduler.go         # Scheduler interface + WorkerScheduler
 ├── output/
 │   └── printer.go           # Printer interface + ConsolePrinter
 ├── Dockerfile               # Multi-stage build
@@ -80,6 +80,8 @@ Dependencies for task 'E' (comma-separated, or leave empty): B,C
 Task ID (e.g. A): F
 Duration for task 'F' (positive integer): 3
 Dependencies for task 'F' (comma-separated, or leave empty): D,E
+
+How many workers?: 2
 ```
 
 ### Output
@@ -87,6 +89,7 @@ Dependencies for task 'F' (comma-separated, or leave empty): D,E
 ```
 ============================================================
   Job: J
+  Workers: 2
 ============================================================
   Minimum completion time : 11 unit(s)
   Critical path           : A -> D -> F

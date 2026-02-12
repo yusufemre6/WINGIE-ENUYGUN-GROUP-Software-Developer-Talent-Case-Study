@@ -1,13 +1,6 @@
-// Package scheduler computes the minimum completion time of a Job
-// using the Critical Path Method (CPM).
-//
-// Algorithm:
-//  1. Topological sort (Kahn's algorithm)
-//  2. Forward pass — compute EST and EFT for every task
-//  3. Minimum completion time = max(EFT)
-//  4. Backward trace — extract the critical path
-//
-// Time complexity: O(V + E)
+// Package scheduler computes a schedule for a job with a fixed number of workers.
+// When workers >= number of tasks, the result matches CPM (unlimited parallelism).
+// Otherwise a discrete-event simulation assigns tasks to workers as they become free.
 package scheduler
 
 import (
@@ -17,23 +10,36 @@ import (
 	"wingie_case/model"
 )
 
-// Scheduler is the interface for job scheduling strategies.
+// Scheduler is the interface for job scheduling with a given number of workers.
 type Scheduler interface {
-	Schedule(job *model.Job) (*model.ScheduleResult, error)
+	Schedule(job *model.Job, workers int) (*model.ScheduleResult, error)
 }
 
-// CriticalPathScheduler implements the CPM algorithm.
-//
-// Assumption: all tasks whose dependencies are satisfied may run
-// in parallel (unlimited workers). Each individual task uses one worker.
-type CriticalPathScheduler struct{}
+// WorkerScheduler schedules tasks with a limited number of workers.
+type WorkerScheduler struct{}
 
-func NewCriticalPathScheduler() *CriticalPathScheduler {
-	return &CriticalPathScheduler{}
+func NewWorkerScheduler() *WorkerScheduler {
+	return &WorkerScheduler{}
 }
 
-// Schedule computes EST/EFT for every task and returns the schedule.
-func (s *CriticalPathScheduler) Schedule(job *model.Job) (*model.ScheduleResult, error) {
+// Schedule returns a schedule for the job using the given number of workers.
+// When workers >= task count, uses CPM (minimum completion time).
+// Otherwise simulates time and assigns ready tasks to free workers.
+func (s *WorkerScheduler) Schedule(job *model.Job, workers int) (*model.ScheduleResult, error) {
+	if workers <= 0 {
+		return nil, fmt.Errorf("workers must be positive, got %d", workers)
+	}
+
+	// When we have at least as many workers as tasks, unlimited parallelism applies.
+	if workers >= job.TaskCount() {
+		return s.scheduleUnlimited(job, workers)
+	}
+
+	return s.scheduleLimited(job, workers)
+}
+
+// scheduleUnlimited runs CPM and sets Workers on the result.
+func (s *WorkerScheduler) scheduleUnlimited(job *model.Job, workers int) (*model.ScheduleResult, error) {
 	order, err := s.topologicalOrder(job)
 	if err != nil {
 		return nil, err
@@ -42,12 +48,8 @@ func (s *CriticalPathScheduler) Schedule(job *model.Job) (*model.ScheduleResult,
 	est := make(map[string]int, job.TaskCount())
 	eft := make(map[string]int, job.TaskCount())
 
-	// Forward pass: compute Earliest Start / Earliest Finish
-	//   EST(t) = max( EFT(dep) ) for each dependency
-	//   EFT(t) = EST(t) + duration(t)
 	for _, id := range order {
 		task := job.Tasks[id]
-
 		if !task.HasDependencies() {
 			est[id] = 0
 		} else {
@@ -59,11 +61,9 @@ func (s *CriticalPathScheduler) Schedule(job *model.Job) (*model.ScheduleResult,
 			}
 			est[id] = maxFinish
 		}
-
 		eft[id] = est[id] + task.Duration
 	}
 
-	// The job finishes when the last task finishes
 	minCompletion := 0
 	for _, f := range eft {
 		if f > minCompletion {
@@ -72,7 +72,6 @@ func (s *CriticalPathScheduler) Schedule(job *model.Job) (*model.ScheduleResult,
 	}
 
 	schedules := s.buildSortedSchedules(order, est, eft)
-
 	executionOrder := make([]string, 0, len(schedules))
 	for _, ts := range schedules {
 		executionOrder = append(executionOrder, ts.TaskID)
@@ -82,6 +81,7 @@ func (s *CriticalPathScheduler) Schedule(job *model.Job) (*model.ScheduleResult,
 
 	return &model.ScheduleResult{
 		JobName:           job.Name,
+		Workers:           workers,
 		MinCompletionTime: minCompletion,
 		TaskSchedules:     schedules,
 		ExecutionOrder:    executionOrder,
@@ -89,14 +89,126 @@ func (s *CriticalPathScheduler) Schedule(job *model.Job) (*model.ScheduleResult,
 	}, nil
 }
 
-// findCriticalPath traces back from the latest-finishing task to find
-// the chain of tasks that determines the total duration.
-func (s *CriticalPathScheduler) findCriticalPath(
-	job *model.Job,
-	est, eft map[string]int,
-	minCompletion int,
-) []string {
-	// Find the task that finishes last
+// scheduleLimited runs a discrete-event simulation with a fixed number of workers.
+func (s *WorkerScheduler) scheduleLimited(job *model.Job, workers int) (*model.ScheduleResult, error) {
+	_, err := s.topologicalOrder(job)
+	if err != nil {
+		return nil, err
+	}
+
+	// reverse[taskID] = tasks that depend on taskID
+	reverse := make(map[string][]string, job.TaskCount())
+	for id, task := range job.Tasks {
+		for _, depID := range task.Dependencies {
+			reverse[depID] = append(reverse[depID], id)
+		}
+	}
+
+	finished := make(map[string]int)
+	startTime := make(map[string]int)
+	ready := make(map[string]bool)
+
+	for id, task := range job.Tasks {
+		if !task.HasDependencies() {
+			ready[id] = true
+		}
+	}
+
+	type slot struct {
+		taskID     string
+		finishTime int
+	}
+	running := make([]slot, 0, workers)
+	var executionOrder []string
+	currentTime := 0
+
+	for {
+		// Assign as many ready tasks as we have free workers
+		readyList := make([]string, 0, len(ready))
+		for id := range ready {
+			readyList = append(readyList, id)
+		}
+		sort.Strings(readyList)
+
+		for len(running) < workers && len(readyList) > 0 {
+			id := readyList[0]
+			readyList = readyList[1:]
+			delete(ready, id)
+
+			task := job.Tasks[id]
+			finish := currentTime + task.Duration
+			startTime[id] = currentTime
+			running = append(running, slot{taskID: id, finishTime: finish})
+			executionOrder = append(executionOrder, id)
+		}
+
+		if len(running) == 0 {
+			break
+		}
+
+		// Advance to next completion event
+		minFinish := running[0].finishTime
+		for _, sl := range running[1:] {
+			if sl.finishTime < minFinish {
+				minFinish = sl.finishTime
+			}
+		}
+		currentTime = minFinish
+
+		// Complete all tasks that finish at currentTime
+		newRunning := running[:0]
+		for _, sl := range running {
+			if sl.finishTime == currentTime {
+				finished[sl.taskID] = currentTime
+				for _, nextID := range reverse[sl.taskID] {
+					task := job.Tasks[nextID]
+					allDone := true
+					for _, depID := range task.Dependencies {
+						if _, ok := finished[depID]; !ok {
+							allDone = false
+							break
+						}
+					}
+					if allDone {
+						ready[nextID] = true
+					}
+				}
+			} else {
+				newRunning = append(newRunning, sl)
+			}
+		}
+		running = newRunning
+	}
+
+	// Build TaskSchedules sorted by start time
+	schedules := make([]model.TaskSchedule, 0, job.TaskCount())
+	for _, id := range executionOrder {
+		start := startTime[id]
+		finish := finished[id]
+		schedules = append(schedules, model.TaskSchedule{
+			TaskID:         id,
+			EarliestStart:  start,
+			EarliestFinish: finish,
+		})
+	}
+	sort.Slice(schedules, func(i, j int) bool {
+		if schedules[i].EarliestStart != schedules[j].EarliestStart {
+			return schedules[i].EarliestStart < schedules[j].EarliestStart
+		}
+		return schedules[i].TaskID < schedules[j].TaskID
+	})
+
+	return &model.ScheduleResult{
+		JobName:           job.Name,
+		Workers:           workers,
+		MinCompletionTime: currentTime,
+		TaskSchedules:     schedules,
+		ExecutionOrder:    executionOrder,
+		CriticalPath:      nil, // not computed for limited workers
+	}, nil
+}
+
+func (s *WorkerScheduler) findCriticalPath(job *model.Job, est, eft map[string]int, minCompletion int) []string {
 	var endTaskID string
 	for id, f := range eft {
 		if f == minCompletion {
@@ -113,8 +225,6 @@ func (s *CriticalPathScheduler) findCriticalPath(
 		if !task.HasDependencies() {
 			break
 		}
-
-		// Pick the dependency whose EFT equals the current task's EST
 		found := false
 		for _, depID := range task.Dependencies {
 			if eft[depID] == est[currentID] {
@@ -124,20 +234,14 @@ func (s *CriticalPathScheduler) findCriticalPath(
 				break
 			}
 		}
-
 		if !found {
 			break
 		}
 	}
-
 	return path
 }
 
-// buildSortedSchedules creates TaskSchedule entries sorted by EST.
-func (s *CriticalPathScheduler) buildSortedSchedules(
-	order []string,
-	est, eft map[string]int,
-) []model.TaskSchedule {
+func (s *WorkerScheduler) buildSortedSchedules(order []string, est, eft map[string]int) []model.TaskSchedule {
 	schedules := make([]model.TaskSchedule, 0, len(order))
 	for _, id := range order {
 		schedules = append(schedules, model.TaskSchedule{
@@ -146,27 +250,22 @@ func (s *CriticalPathScheduler) buildSortedSchedules(
 			EarliestFinish: eft[id],
 		})
 	}
-
 	sort.Slice(schedules, func(i, j int) bool {
 		if schedules[i].EarliestStart == schedules[j].EarliestStart {
 			return schedules[i].TaskID < schedules[j].TaskID
 		}
 		return schedules[i].EarliestStart < schedules[j].EarliestStart
 	})
-
 	return schedules
 }
 
-// topologicalOrder returns tasks in topological order using Kahn's algorithm.
-// The queue is sorted alphabetically at each step for deterministic output.
-func (s *CriticalPathScheduler) topologicalOrder(job *model.Job) ([]string, error) {
+func (s *WorkerScheduler) topologicalOrder(job *model.Job) ([]string, error) {
 	indegree := make(map[string]int, job.TaskCount())
 	adjacency := make(map[string][]string, job.TaskCount())
 
 	for id := range job.Tasks {
 		indegree[id] = 0
 	}
-
 	for id, task := range job.Tasks {
 		for _, depID := range task.Dependencies {
 			adjacency[depID] = append(adjacency[depID], id)
@@ -190,7 +289,6 @@ func (s *CriticalPathScheduler) topologicalOrder(job *model.Job) ([]string, erro
 
 		neighbors := adjacency[current]
 		sort.Strings(neighbors)
-
 		for _, neighbor := range neighbors {
 			indegree[neighbor]--
 			if indegree[neighbor] == 0 {
@@ -203,6 +301,5 @@ func (s *CriticalPathScheduler) topologicalOrder(job *model.Job) ([]string, erro
 	if len(order) != job.TaskCount() {
 		return nil, fmt.Errorf("topological sort failed: graph contains a cycle")
 	}
-
 	return order, nil
 }

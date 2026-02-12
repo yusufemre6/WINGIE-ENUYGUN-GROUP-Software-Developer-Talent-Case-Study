@@ -37,16 +37,16 @@ func NewApp(
 func (a *App) Run() error {
 	printWelcome()
 
-	job, err := a.reader.ReadJob()
+	in, err := a.reader.ReadJob()
 	if err != nil {
 		return fmt.Errorf("input error: %w", err)
 	}
 
-	if err := a.validator.Validate(job); err != nil {
+	if err := a.validator.Validate(in.Job); err != nil {
 		return fmt.Errorf("validation error: %w", err)
 	}
 
-	result, err := a.scheduler.Schedule(job)
+	result, err := a.scheduler.Schedule(in.Job, in.Workers)
 	if err != nil {
 		return fmt.Errorf("scheduling error: %w", err)
 	}
@@ -67,7 +67,7 @@ func main() {
 	app := NewApp(
 		input.NewCLIReader(os.Stdin),
 		validator.NewGraphValidator(),
-		scheduler.NewCriticalPathScheduler(),
+		scheduler.NewWorkerScheduler(),
 		output.NewConsolePrinter(),
 	)
 

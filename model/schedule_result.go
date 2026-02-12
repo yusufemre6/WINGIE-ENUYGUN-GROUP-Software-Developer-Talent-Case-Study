@@ -12,8 +12,9 @@ type TaskSchedule struct {
 // ScheduleResult contains the full output of the scheduling algorithm.
 type ScheduleResult struct {
 	JobName           string
+	Workers           int             // number of workers used
 	MinCompletionTime int
-	TaskSchedules     []TaskSchedule // sorted by EarliestStart
-	ExecutionOrder    []string       // task IDs sorted by start time
-	CriticalPath      []string       // longest path through the DAG
+	TaskSchedules     []TaskSchedule  // sorted by start time
+	ExecutionOrder    []string        // task IDs in order they were started
+	CriticalPath      []string        // longest path (only when workers >= task count)
 }

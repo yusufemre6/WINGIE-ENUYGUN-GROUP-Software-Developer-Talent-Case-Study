@@ -11,9 +11,15 @@ import (
 	"wingie_case/model"
 )
 
-// Reader is the interface for reading a Job from any source.
+// JobInput holds the result of reading: a job and the number of workers.
+type JobInput struct {
+	Job     *model.Job
+	Workers int
+}
+
+// Reader is the interface for reading a Job and worker count from any source.
 type Reader interface {
-	ReadJob() (*model.Job, error)
+	ReadJob() (*JobInput, error)
 }
 
 // CLIReader reads job definitions interactively from a terminal.
@@ -29,9 +35,8 @@ func NewCLIReader(r io.Reader) *CLIReader {
 	}
 }
 
-// ReadJob prompts the user for a job name, task count, and each task's
-// ID, duration, and comma-separated dependency list.
-func (c *CLIReader) ReadJob() (*model.Job, error) {
+// ReadJob prompts for job name, task count, each task's data, and number of workers.
+func (c *CLIReader) ReadJob() (*JobInput, error) {
 	jobName, err := c.promptString("Enter job name (e.g. J)")
 	if err != nil {
 		return nil, fmt.Errorf("could not read job name: %w", err)
@@ -58,7 +63,15 @@ func (c *CLIReader) ReadJob() (*model.Job, error) {
 		}
 	}
 
-	return job, nil
+	workers, err := c.promptInt("How many workers?")
+	if err != nil {
+		return nil, fmt.Errorf("could not read worker count: %w", err)
+	}
+	if workers <= 0 {
+		return nil, fmt.Errorf("worker count must be positive, got %d", workers)
+	}
+
+	return &JobInput{Job: job, Workers: workers}, nil
 }
 
 // readTask reads a single task definition from the user.
