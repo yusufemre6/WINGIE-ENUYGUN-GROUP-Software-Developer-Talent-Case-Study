@@ -1,10 +1,19 @@
 # Solution Description
 
+## Terms
+
+- **DAG** — Directed Acyclic Graph: a graph with directed edges and no cycles (no path from a task back to itself).
+- **CPM** — Critical Path Method: the algorithm used to find the minimum completion time.
+- **EST** — Earliest Start Time: the earliest time a task can start (after all its dependencies finish).
+- **EFT** — Earliest Finish Time: the earliest time a task can finish; `EFT = EST + duration`.
+- **V** — number of tasks (vertices in the graph).
+- **E** — number of dependency edges.
+
 ## Algorithm (Critical Path Method)
 
-The job and its tasks form a **directed acyclic graph (DAG)** where each node is a task and edges represent dependencies.
+The job and its tasks form a **DAG** where each node is a task and edges represent dependencies.
 
-I use **Critical Path Method (CPM)** to compute the minimum completion time:
+I use **CPM** to compute the minimum completion time:
 
 1. **Topological sort** of all tasks (Kahn's algorithm).
 2. **Forward pass** to compute, for each task:
