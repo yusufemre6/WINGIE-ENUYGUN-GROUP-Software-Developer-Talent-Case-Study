@@ -13,15 +13,61 @@
 
 The job and its tasks form a **DAG** where each node is a task and edges represent dependencies.
 
-I use **CPM** to compute the minimum completion time:
+1. **Topological sort** of all tasks (Kahn's algorithm) so that whenever task X depends on task Y, Y appears before X in the order.
+2. **Forward pass**: process tasks in that order. For each task:
+   - `EST = 0` if it has no dependencies, otherwise `EST = max(EFT of each dependency)`.
+   - `EFT = EST + duration`.
+3. **Minimum completion time** = `max(EFT)` over all tasks.
+4. **Critical path**: from the task with the largest EFT, go backwards by always picking the dependency whose EFT equals the current task's EST.
 
-1. **Topological sort** of all tasks (Kahn's algorithm).
-2. **Forward pass** to compute, for each task:
-   - `EST(task) = max( EFT(dep) for all dependencies )` (or `0` if there is no dependency),
-   - `EFT(task) = EST(task) + duration(task)`.
-3. The **minimum completion time** of the job is `max( EFT(task) )` over all tasks.
-4. The **critical path** is found by tracing backwards from the task with the largest `EFT`, always choosing a dependency whose `EFT` equals the current task's `EST`.
+Time complexity: **O(V + E)**.
 
-This runs in **O(V + E)** time, where `V` is the number of tasks and `E` is the number of dependency edges.
+Assumption: each task uses one worker; independent tasks can run in parallel once their dependencies are done.
 
-Assumption: each task uses a single worker, but independent tasks can run in parallel once their dependencies are finished.
+---
+
+## Worked Example (from the case study)
+
+**Input**
+
+| Task | Duration | Dependencies |
+|------|----------|--------------|
+| A    | 3        | —            |
+| B    | 2        | —            |
+| C    | 4        | —            |
+| D    | 5        | A            |
+| E    | 2        | B, C         |
+| F    | 3        | D, E         |
+
+So: A, B, C have no dependencies; D depends on A; E depends on B and C; F depends on D and E.
+
+**Step 1 — Topological order**
+
+Kahn's algorithm gives an order where every dependency is processed before the task that depends on it. One valid order is:
+
+`A, B, C, D, E, F`
+
+We will use this order for the forward pass.
+
+**Step 2 — Forward pass (EST and EFT)**
+
+| Task | Dependencies | EST | EFT |
+|------|--------------|-----|-----|
+| A    | none         | 0   | 0 + 3 = **3** |
+| B    | none         | 0   | 0 + 2 = **2** |
+| C    | none         | 0   | 0 + 4 = **4** |
+| D    | A            | EFT(A) = 3 | 3 + 5 = **8** |
+| E    | B, C         | max(EFT(B), EFT(C)) = max(2, 4) = **4** | 4 + 2 = **6** |
+| F    | D, E         | max(EFT(D), EFT(E)) = max(8, 6) = **8** | 8 + 3 = **11** |
+
+**Step 3 — Minimum completion time**
+
+The job finishes when the last task finishes. The latest EFT is 11 (task F).
+
+**Minimum completion time = 11** (unit times).
+
+**Step 4 — Critical path**
+
+Start from the task that finishes last: **F** (EFT = 11). F's EST is 8; the dependency that finishes at time 8 is **D**. So F is preceded by D. D's EST is 3; the dependency that finishes at time 3 is **A**. So the path is **A → D → F**.
+
+**Critical path: A → D → F** (total duration 3 + 5 + 3 = 11). Any delay on this path increases the total completion time.
