@@ -182,7 +182,7 @@ func (s *WorkerScheduler) scheduleLimited(job *model.Job, workers int) (*model.S
 
 	// Build TaskSchedules sorted by start time
 	schedules := make([]model.TaskSchedule, 0, job.TaskCount())
-	for _, id := range executionOrder {
+	for id := range startTime {
 		start := startTime[id]
 		finish := finished[id]
 		schedules = append(schedules, model.TaskSchedule{
@@ -198,12 +198,18 @@ func (s *WorkerScheduler) scheduleLimited(job *model.Job, workers int) (*model.S
 		return schedules[i].TaskID < schedules[j].TaskID
 	})
 
+	// ExecutionOrder: sorted by start time (same time = alphabetical)
+	executionOrderSorted := make([]string, 0, len(schedules))
+	for _, ts := range schedules {
+		executionOrderSorted = append(executionOrderSorted, ts.TaskID)
+	}
+
 	return &model.ScheduleResult{
 		JobName:           job.Name,
 		Workers:           workers,
 		MinCompletionTime: currentTime,
 		TaskSchedules:     schedules,
-		ExecutionOrder:    executionOrder,
+		ExecutionOrder:    executionOrderSorted,
 		CriticalPath:      nil, // not computed for limited workers
 	}, nil
 }
